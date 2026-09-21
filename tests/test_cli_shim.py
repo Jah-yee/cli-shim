@@ -286,3 +286,66 @@ class TestKnownCLIRegistry:
         assert discover_json_flag(["npm", "list"]) == "--json"
         assert discover_json_flag(["yarn", "info"]) == "--json"
         assert discover_json_flag(["pnpm", "list"]) == "--json"
+
+
+class TestAnsiSecurity:
+    """Tests for ANSI escape injection prevention (#51)."""
+
+    def test_osc_hyperlink_stripped(self):
+        """OSC hyperlink sequences must be stripped."""
+        payload = "normal\x1b]8;;http://evil\x07click here\x1b]8;;\x07text"
+        result = strip_ansi(payload)
+        assert "\x1b]8" not in result
+        assert "normal" in result
+        assert "text" in result
+
+    def test_osc_window_title_stripped(self):
+        """OSC window title sequences must be stripped."""
+        payload = "data\x1b]0;Fake Title\x07more data"
+        result = strip_ansi(payload)
+        assert "\x1b]0" not in result
+        assert "\x07" not in result
+        assert "Fake Title" not in result
+
+    def test_dcs_sequence_stripped(self):
+        """DCS sequences must be stripped (proper ST terminator)."""
+        payload = "before\x1bP+q5443\x1b\\after"
+        result = strip_ansi(payload)
+        assert "\x1bP" not in result
+        assert "before" in result
+        assert "after" in result
+
+    def test_apc_sequence_stripped(self):
+        """APC sequences must be stripped (proper ST terminator)."""
+        payload = "before\x1b_Gi=1,a=q\x1b\\after"
+        result = strip_ansi(payload)
+        assert "\x1b_G" not in result
+        assert "before" in result
+        assert "after" in result
+
+    def test_fake_json_injection_blocked(self):
+        """Attacker cannot inject fake JSON via OSC sequence."""
+        payload = '{"status":"success","fake":true}\x1b]0;pwned\x07'
+        result = strip_ansi(payload)
+        # The OSC sequence is removed, leaving only the attacker JSON
+        # But importantly, the escape injection vector is neutralized
+        assert "\x1b]0" not in result
+        assert "\x07" not in result
+
+    def test_nested_escape_sequences(self):
+        """Multiple nested escape sequences are stripped."""
+        payload = "\x1b[31m\x1b[1mred bold\x1b[0m \x1b[32mgreen\x1b[0m"
+        result = strip_ansi(payload)
+        assert result == "red bold green"
+
+    def test_cursor_home_with_text(self):
+        """Cursor home + text is stripped."""
+        payload = "\x1b[HHomescreen text"
+        result = strip_ansi(payload)
+        assert result == "Homescreen text"
+
+    def test_csi_catch_all(self):
+        """Unknown CSI sequences are stripped by catch-all."""
+        payload = "\x1b[?25lhide cursor\x1b[?25hshow cursor"
+        result = strip_ansi(payload)
+        assert "\x1b" not in result

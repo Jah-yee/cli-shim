@@ -21,7 +21,14 @@ from typing import Optional, Dict, List, Any
 AGENT_ENV_VARS = ["CLAUDECODE", "AI_AGENT", "OPENCLAW_AGENT", "CODEX_SESSION", "HERMES_CRON"]
 JSON_FLAGS = ["--json", "--output=json", "-j", "-ojson", "--format=json"]
 NON_INTERACTIVE_FLAGS = ["--yes", "--non-interactive", "-y", "--no-input", "--quiet", "-q"]
-ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[mGKHF]|\x1b\[.*?[a-zA-Z]|\x1b\[2J|\x1b\[H')
+ANSI_ESCAPE = re.compile(
+    r'\x1b\[[0-9;]*[mGKHF]'       # CSI - Control Sequence Introducer
+    r'|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)'  # OSC - Operating System Command (bel or st terminator)
+    r'|\x1bP[^\x1b]*(?:\x1b\\|$)'  # DCS - Device Control String (ST or end-of-string)
+    r'|\x1b[_^][^\x1b]*(?:\x1b\\|$)'  # APC/PM - Application/Private Message (ST or end-of-string)
+    r'|\x1b\[.*?[a-zA-Z]'           # CSI catch-all (any letter terminator)
+    r'|\x1b\[2J|\x1b\[H'           # Erase screen / cursor home
+)
 
 
 def is_agent_mode() -> bool:
@@ -37,7 +44,11 @@ def is_interactive_terminal() -> bool:
 # ─── Output Normalization ──────────────────────────────────────────────────
 
 def strip_ansi(text: str) -> str:
-    """Remove ANSI escape sequences from text."""
+    """
+    Remove ANSI escape sequences from text.
+    Covers CSI, OSC, DCS, APC, and PM sequences.
+    Prevents terminal escape injection in agent output (fixes #51).
+    """
     return ANSI_ESCAPE.sub('', text)
 
 
@@ -197,6 +208,7 @@ def discover_manifest(cmd_path: str) -> Dict[str, Any]:
     """
     Try to discover CLI capabilities by parsing --help output.
     Returns a structured manifest.
+    Strips ANSI sequences before parsing (fixes #60).
     """
     manifest = {
         "name": os.path.basename(cmd_path),
@@ -218,6 +230,9 @@ def discover_manifest(cmd_path: str) -> Dict[str, Any]:
         help_text = result.stdout + result.stderr
         manifest["help_text"] = help_text[:2000]  # Truncate
         
+        # Strip ANSI before parsing (fixes #60)
+        clean_help = strip_ansi(help_text)
+        
         # Extract commands from common help patterns
         # Pattern: "Commands:" or "Available Commands:" followed by indented list
         cmd_patterns = [
@@ -226,7 +241,7 @@ def discover_manifest(cmd_path: str) -> Dict[str, Any]:
         ]
         
         for pattern in cmd_patterns:
-            matches = re.findall(pattern, help_text, re.MULTILINE)
+            matches = re.findall(pattern, clean_help, re.MULTILINE)
             if matches:
                 first = matches[0]
                 if isinstance(first, tuple):
@@ -255,7 +270,7 @@ def discover_manifest(cmd_path: str) -> Dict[str, Any]:
             r'JSON\s+output',
         ]
         for pat in json_hint_patterns:
-            m = re.search(pat, help_text, re.IGNORECASE)
+            m = re.search(pat, clean_help, re.IGNORECASE)
             if m:
                 manifest["json_flag"] = m.group(1) if m.lastindex else "--json"
                 break
@@ -265,11 +280,11 @@ def discover_manifest(cmd_path: str) -> Dict[str, Any]:
             r'(--yes\b|-y\b|--non-interactive\b|--no-input\b|--quiet\b)',
         ]
         for pat in non_int_patterns:
-            m = re.search(pat, help_text)
+            m = re.search(pat, clean_help)
             if m:
                 manifest["non_interactive_flag"] = m.group(1)
                 break
-        
+    
     except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
         pass
     
