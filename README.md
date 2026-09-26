@@ -94,3 +94,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for dev
 ## License
 
 MIT — Yunare Maia, 2026
+
+# cli-shim
+
+![CI](https://github.com/yunaremaia/cli-shim/actions/workflows/ci.yml/badge.svg)
