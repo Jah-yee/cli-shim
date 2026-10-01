@@ -1,5 +1,7 @@
 # cli-shim
 
+![ci](https://github.com/yunaremaia/cli-shim/actions/workflows/ci.yml/badge.svg) ![py](https://img.shields.io/badge/python-3.8-blue.svg) ![license](https://img.shields.io/github/license/yunaremaia/cli-shim) ![stars](https://img.shields.io/github/stars/yunaremaia/cli-shim)
+
 > Universal Agent-Native CLI Adapter — makes legacy CLIs agent-friendly
 
 `cli-shim` wraps any command-line tool and makes it safe and predictable for AI agents (Claude Code, Codex, Cursor, OpenClaw, Hermes, etc.) to use.
@@ -87,6 +89,18 @@ shim --manifest railway
 # → {"name": "railway", "commands": [...], "json_flag": "--json"}
 ```
 
+If this tool is useful to you, a star helps other people find it.
+
+## Related tools
+
+- **[depscan](https://github.com/yunaremaia/depscan)** — scan dependencies across multiple ecosystems
+- **[driftcheck](https://github.com/yunaremaia/driftcheck)** — detect version drift between docs and toolchain files
+- **[agent-workspace](https://github.com/yunaremaia/agent-workspace)** — isolated workspaces per AI agent session
+- **[mcp-guard](https://github.com/yunaremaia/mcp-guard)** — audit MCP servers for unsafe permissions
+
+Part of a family of focused, single-purpose developer tools — each one does one thing
+and does it well.
+
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, architecture details, and a step-by-step guide on adding new CLIs to the registry.
@@ -98,3 +112,4 @@ MIT — Yunare Maia, 2026
 # cli-shim
 
 ![CI](https://github.com/yunaremaia/cli-shim/actions/workflows/ci.yml/badge.svg)
+
