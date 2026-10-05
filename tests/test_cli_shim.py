@@ -120,8 +120,10 @@ class TestInjectJsonFlag:
         assert result == ["kubectl", "get", "pods", "-o=json"]
 
     def test_kubectl_get_pods_with_flags(self):
+        # JSON flag must be inserted AFTER existing flags so it wins for
+        # last-flag-wins CLIs (kubectl, docker, gh, helm)
         result = inject_json_flag(["kubectl", "get", "pods", "-o", "wide"], "--json")
-        assert result == ["kubectl", "get", "pods", "--json", "-o", "wide"]
+        assert result == ["kubectl", "get", "pods", "-o", "wide", "--json"]
 
     def test_docker_ps(self):
         result = inject_json_flag(["docker", "ps"], "--json")
