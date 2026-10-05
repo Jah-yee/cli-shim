@@ -216,6 +216,7 @@ def discover_manifest(cmd_path: str) -> Dict[str, Any]:
             [cmd_path, "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             errors="replace",
             timeout=10,
         )
@@ -462,6 +463,11 @@ def main():
         non_interactive=args.non_interactive,
         timeout=args.timeout,
     )
+    
+    # Reconfigure stdout/stderr to tolerate replacement characters so that
+    # undecodable bytes from the child don't crash the shim under ASCII stdio.
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
     
     # Output
     if args.json or (is_agent_mode() and not args.raw):
