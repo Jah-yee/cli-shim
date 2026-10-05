@@ -17,6 +17,7 @@ from cli_shim import (
     discover_manifest,
     is_agent_mode,
     run_shim,
+    main,
     ShimResult,
     ANSI_ESCAPE,
 )
@@ -90,6 +91,10 @@ class TestDiscoverJsonFlag:
     def test_already_present(self):
         assert discover_json_flag(["gh", "pr", "list", "--json"]) is None
     
+    def test_kubectl_already_satisfied(self):
+        # kubectl already has -o=json — should not fall through to --json fallback
+        assert discover_json_flag(["kubectl", "get", "pods", "-o=json"]) is None
+
     def test_unknown(self):
         assert discover_json_flag(["mytool"]) == "--json"
     
@@ -116,8 +121,10 @@ class TestInjectJsonFlag:
         assert result == ["kubectl", "get", "pods", "-o=json"]
 
     def test_kubectl_get_pods_with_flags(self):
+        # JSON flag must be inserted AFTER existing flags so it wins for
+        # last-flag-wins CLIs (kubectl, docker, gh, helm)
         result = inject_json_flag(["kubectl", "get", "pods", "-o", "wide"], "--json")
-        assert result == ["kubectl", "get", "pods", "--json", "-o", "wide"]
+        assert result == ["kubectl", "get", "pods", "-o", "wide", "--json"]
 
     def test_docker_ps(self):
         result = inject_json_flag(["docker", "ps"], "--json")
@@ -173,6 +180,17 @@ class TestDiscoverManifest:
         assert "error" not in manifest
         assert "\ufffd" in manifest["help_text"]
 
+    def test_run_shim_replaces_undecodable_output(self):
+        """#67: run_shim must use errors='replace' so undecodable bytes become U+FFFD."""
+        script = "/tmp/cli_shim_undecodable.sh"
+        with open(script, "wb") as fh:
+            fh.write(b"#!/bin/sh\nprintf '\xff'")
+        os.chmod(script, 0o755)
+
+        result = run_shim([script], agent_mode=True, timeout=5)
+        assert result.success is True, f"Expected success, got returncode={result.returncode}"
+        assert "\ufffd" in result.stdout, f"Expected U+FFFD in stdout, got {result.stdout!r}"
+
 
 class TestIsAgentMode:
     def test_no_env(self):
@@ -212,6 +230,71 @@ class TestShimResult:
         captured = capsys.readouterr()
         data = json.loads(captured.out)
         assert data["success"] is True
+
+
+class TestExitStatus:
+    """#71: signal-killed children must exit 128+N, not the raw negative code."""
+
+    def test_signal_exit_code_is_128_plus_signal(self, monkeypatch, capsys):
+        exit_codes = []
+        def mock_exit(code=0):
+            exit_codes.append(code)
+            raise SystemExit(code)
+
+        monkeypatch.setattr(sys, "exit", mock_exit)
+
+        # SIGTERM (-15) → 143
+        def mock_run_shim_term(cmd, **kwargs):
+            return ShimResult(-15, "test output", "", cmd)
+        monkeypatch.setattr("cli_shim.run_shim", mock_run_shim_term)
+        monkeypatch.setattr(sys, "argv", ["shim", "test"])
+
+        try:
+            main()
+        except SystemExit:
+            pass
+
+        assert len(exit_codes) == 1, f"Expected 1 exit call, got {len(exit_codes)}"
+        assert exit_codes[0] == 143, f"SIGTERM: expected 143 (128+15), got {exit_codes[0]}"
+
+        # SIGKILL (-9) → 137
+        exit_codes.clear()
+        def mock_run_shim_kill(cmd, **kwargs):
+            return ShimResult(-9, "killed", "", cmd)
+        monkeypatch.setattr("cli_shim.run_shim", mock_run_shim_kill)
+
+        try:
+            main()
+        except SystemExit:
+            pass
+
+        assert exit_codes[0] == 137, f"SIGKILL: expected 137 (128+9), got {exit_codes[0]}"
+
+        # Positive returncode passes through untouched
+        exit_codes.clear()
+        def mock_run_shim_ok(cmd, **kwargs):
+            return ShimResult(42, "ok", "", cmd)
+        monkeypatch.setattr("cli_shim.run_shim", mock_run_shim_ok)
+
+        try:
+            main()
+        except SystemExit:
+            pass
+
+        assert exit_codes[0] == 42, f"Normal exit: expected 42, got {exit_codes[0]}"
+
+        # Zero passes through
+        exit_codes.clear()
+        def mock_run_shim_zero(cmd, **kwargs):
+            return ShimResult(0, "", "", cmd)
+        monkeypatch.setattr("cli_shim.run_shim", mock_run_shim_zero)
+
+        try:
+            main()
+        except SystemExit:
+            pass
+
+        assert exit_codes[0] == 0, f"Zero exit: expected 0, got {exit_codes[0]}"
 
 
 class TestRunShim:

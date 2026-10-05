@@ -154,6 +154,7 @@ def discover_json_flag(cmd: List[str]) -> Optional[str]:
         # Check if already present
         if flag not in cmd:
             return flag
+        return None  # flag already present, do not inject
     
     # Fallback: try --json
     if "--json" not in cmd:
@@ -163,7 +164,7 @@ def discover_json_flag(cmd: List[str]) -> Optional[str]:
 
 
 def inject_json_flag(cmd: List[str], flag: str) -> List[str]:
-    """Insert JSON flag into command after the subcommand and before extra flags."""
+    """Insert JSON flag after the subcommand and after existing flags (so it wins for last-flag-wins CLIs)."""
     if not cmd:
         return cmd
     if len(cmd) < 2:
@@ -171,14 +172,7 @@ def inject_json_flag(cmd: List[str], flag: str) -> List[str]:
 
     limit = cmd.index("--") if "--" in cmd else len(cmd)
 
-    # If the command starts with positional words after cmd[0]:
-    if not cmd[1].startswith("-"):
-        insert_pos = 1
-        while insert_pos < limit and not cmd[insert_pos].startswith("-"):
-            insert_pos += 1
-        return cmd[:insert_pos] + [flag] + cmd[insert_pos:]
-
-    # If flags precede the subcommand (e.g. gh --repo owner/repo pr list):
+    # Find the subcommand end (last non-flag argument before --)
     subcmd_end = None
     for i in range(limit - 1, 0, -1):
         if not cmd[i].startswith("-"):
@@ -186,7 +180,16 @@ def inject_json_flag(cmd: List[str], flag: str) -> List[str]:
             break
 
     if subcmd_end is not None:
+        # Insert after the subcommand AND after any flags that follow it
+        # so the JSON flag wins for last-flag-wins CLIs
         return cmd[:subcmd_end] + [flag] + cmd[subcmd_end:]
+
+    # No subcommand found — insert after first flag
+    if not cmd[1].startswith("-"):
+        insert_pos = 1
+        while insert_pos < limit and not cmd[insert_pos].startswith("-"):
+            insert_pos += 1
+        return cmd[:insert_pos] + [flag] + cmd[insert_pos:]
 
     return cmd[:limit] + [flag] + cmd[limit:]
 
@@ -213,6 +216,7 @@ def discover_manifest(cmd_path: str) -> Dict[str, Any]:
             [cmd_path, "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             errors="replace",
             timeout=10,
         )
@@ -352,6 +356,8 @@ def run_shim(
             cmd,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=timeout,
             env={**os.environ, "TERM": "dumb"},  # Dumb terminal = no fancy output
         )
@@ -458,13 +464,22 @@ def main():
         timeout=args.timeout,
     )
     
+    # Reconfigure stdout/stderr to tolerate replacement characters so that
+    # undecodable bytes from the child don't crash the shim under ASCII stdio.
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+    
     # Output
     if args.json or (is_agent_mode() and not args.raw):
         result.print_json()
     else:
         result.print_human()
     
-    sys.exit(result.returncode)
+    # Convert negative returncode (signal-killed child) to 128+N convention
+    exit_code = result.returncode
+    if exit_code < 0:
+        exit_code = 128 + abs(exit_code)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
