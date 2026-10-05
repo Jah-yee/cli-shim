@@ -154,6 +154,7 @@ def discover_json_flag(cmd: List[str]) -> Optional[str]:
         # Check if already present
         if flag not in cmd:
             return flag
+        return None  # flag already present, do not inject
     
     # Fallback: try --json
     if "--json" not in cmd:

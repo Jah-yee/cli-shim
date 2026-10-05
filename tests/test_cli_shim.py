@@ -90,6 +90,10 @@ class TestDiscoverJsonFlag:
     def test_already_present(self):
         assert discover_json_flag(["gh", "pr", "list", "--json"]) is None
     
+    def test_kubectl_already_satisfied(self):
+        # kubectl already has -o=json — should not fall through to --json fallback
+        assert discover_json_flag(["kubectl", "get", "pods", "-o=json"]) is None
+
     def test_unknown(self):
         assert discover_json_flag(["mytool"]) == "--json"
     
