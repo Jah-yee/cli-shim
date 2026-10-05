@@ -148,6 +148,31 @@ class TestDiscoverManifest:
             manifest = discover_manifest(echo_path)
             assert manifest["name"] == "echo"
 
+    def test_missing_binary_reports_error(self):
+        # ENOENT used to be swallowed into a manifest with no commands and no
+        # error, which reads downstream as "this CLI has no subcommands".
+        manifest = discover_manifest("/nonexistent/definitely-not-a-binary")
+        assert "error" in manifest
+        assert "/nonexistent/definitely-not-a-binary" in manifest["error"]
+        assert manifest["commands"] == []
+
+    def test_directory_reports_error(self):
+        # EISDIR/ENOEXEC: not FileNotFoundError, not PermissionError, so the
+        # old tuple never caught it.
+        manifest = discover_manifest("/tmp")
+        assert "error" in manifest
+
+    def test_undecodable_help_output_does_not_raise(self):
+        # errors="replace": a command whose --help is not valid UTF-8 used to
+        # raise UnicodeDecodeError straight out of discover_manifest.
+        script = "/tmp/cli_shim_binary_help.sh"
+        with open(script, "wb") as fh:
+            fh.write(b"#!/bin/sh\nprintf 'Commands:\\n  \\377\\376 bad utf8\\n'\n")
+        os.chmod(script, 0o755)
+        manifest = discover_manifest(script)
+        assert "error" not in manifest
+        assert "\ufffd" in manifest["help_text"]
+
 
 class TestIsAgentMode:
     def test_no_env(self):
