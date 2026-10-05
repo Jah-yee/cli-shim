@@ -29,6 +29,15 @@ def is_agent_mode() -> bool:
     return any(os.environ.get(var) for var in AGENT_ENV_VARS)
 
 
+def _exit_status(returncode: int) -> int:
+    """Translate signal deaths to the conventional 128 + N exit code.
+
+    subprocess reports -N when the child is terminated by signal N; POSIX
+    shells use 128 + N. Without this, sys.exit(-9) produces 247 instead of 137.
+    """
+    return 128 - returncode if returncode < 0 else returncode
+
+
 def is_interactive_terminal() -> bool:
     """Check if stdin/stdout are connected to a terminal."""
     return sys.stdin.isatty() and sys.stdout.isatty()
@@ -457,7 +466,7 @@ def main():
     else:
         result.print_human()
     
-    sys.exit(result.returncode)
+    sys.exit(_exit_status(result.returncode))
 
 
 if __name__ == "__main__":

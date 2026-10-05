@@ -286,3 +286,28 @@ class TestKnownCLIRegistry:
         assert discover_json_flag(["npm", "list"]) == "--json"
         assert discover_json_flag(["yarn", "info"]) == "--json"
         assert discover_json_flag(["pnpm", "list"]) == "--json"
+
+
+class TestExitStatus:
+    """Tests for _exit_status() — signal death exit code translation."""
+
+    def test_normal_exit(self):
+        from cli_shim import _exit_status
+        assert _exit_status(0) == 0
+        assert _exit_status(1) == 1
+        assert _exit_status(127) == 127
+
+    def test_signal_death_sigkill(self):
+        """subprocess reports -9 for SIGKILL; POSIX shells use 137."""
+        from cli_shim import _exit_status
+        assert _exit_status(-9) == 137
+
+    def test_signal_death_sigterm(self):
+        """subprocess reports -15 for SIGTERM; POSIX shells use 143."""
+        from cli_shim import _exit_status
+        assert _exit_status(-15) == 143
+
+    def test_signal_death_sigint(self):
+        """subprocess reports -2 for SIGINT; POSIX shells use 130."""
+        from cli_shim import _exit_status
+        assert _exit_status(-2) == 130
