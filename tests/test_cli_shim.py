@@ -297,6 +297,34 @@ class TestExitStatus:
         assert exit_codes[0] == 0, f"Zero exit: expected 0, got {exit_codes[0]}"
 
 
+class TestAsciiStdio:
+    """#67: non-ASCII output must not crash the shim under an ASCII locale."""
+
+    def test_manifest_mode_survives_ascii_stdio(self, monkeypatch):
+        """Manifest mode prints before any command runs, so it needs the guard too."""
+        import io
+
+        manifest = {"name": "fakecli", "description": "résumé tool — dash"}
+
+        # A real ASCII-only stream: writes raise UnicodeEncodeError until the
+        # errors policy is relaxed, exactly like LC_ALL=C on a real terminal.
+        buf = io.BytesIO()
+        out = io.TextIOWrapper(buf, encoding="ascii", errors="strict")
+        assert out.encoding == "ascii"
+
+        monkeypatch.setattr(sys, "stdout", out)
+        monkeypatch.setattr("cli_shim.discover_manifest", lambda p: manifest)
+        monkeypatch.setattr("cli_shim.shutil.which", lambda c: "/usr/bin/" + c)
+        monkeypatch.setattr(sys, "argv", ["shim", "--manifest", "fakecli"])
+
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 0
+
+        out.flush()
+        assert "dash" in buf.getvalue().decode("ascii")
+
+
 class TestRunShim:
     def test_echo_command(self):
         result = run_shim(["echo", "hello world"], agent_mode=True, timeout=5)

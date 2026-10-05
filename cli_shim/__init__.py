@@ -377,6 +377,13 @@ def run_shim(
 def main():
     import argparse
     
+    # Tolerate undecodable bytes from the child on ASCII-only stdio (LC_ALL=C,
+    # PYTHONIOENCODING=ascii). Done once, first, so every output path below --
+    # manifest, JSON, human -- is covered by it.
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(errors="replace")
+    
     parser = argparse.ArgumentParser(
         prog="shim",
         description="Universal Agent-Native CLI Adapter — makes legacy CLIs agent-friendly",
@@ -463,11 +470,6 @@ def main():
         non_interactive=args.non_interactive,
         timeout=args.timeout,
     )
-    
-    # Reconfigure stdout/stderr to tolerate replacement characters so that
-    # undecodable bytes from the child don't crash the shim under ASCII stdio.
-    sys.stdout.reconfigure(errors="replace")
-    sys.stderr.reconfigure(errors="replace")
     
     # Output
     if args.json or (is_agent_mode() and not args.raw):
