@@ -274,7 +274,7 @@ def discover_manifest(cmd_path: str) -> Dict[str, Any]:
     except subprocess.TimeoutExpired:
         manifest["error"] = "--help timed out after 10s"
     except OSError as e:  # ENOENT, EACCES, ENOEXEC, EISDIR, ENOTDIR, etc.
-        manifest["error"] = f"cannot execute {cmd_path}: {e}"
+        manifest["error"] = f"cannot execute {e}"
     
     return manifest
 
@@ -441,10 +441,9 @@ def main():
         if not cmd_path:
             print(json.dumps({"error": f"Command not found: {cmd[0]}"}), file=sys.stderr)
             sys.exit(127)
-        try:
-            manifest = discover_manifest(cmd_path)
-        except Exception as e:
-            print(json.dumps({"error": str(e)}), file=sys.stderr)
+        manifest = discover_manifest(cmd_path)
+        if "error" in manifest:
+            print(json.dumps({"error": manifest["error"]}), file=sys.stderr)
             sys.exit(1)
         print(json.dumps(manifest, indent=2, ensure_ascii=False))
         sys.exit(0)

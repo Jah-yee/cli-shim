@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import shutil
+import subprocess
 import pytest
 
 # Add parent dir to path
@@ -147,6 +148,37 @@ class TestDiscoverManifest:
         if echo_path:
             manifest = discover_manifest(echo_path)
             assert manifest["name"] == "echo"
+
+    def test_discover_manifest_exec_format_error(self, tmp_path):
+        """An unexec'able file yields an error field, not a traceback (#70)."""
+        bad = tmp_path / "notabin"
+        bad.write_text("no shebang here\n")
+        bad.chmod(0o755)
+
+        manifest = discover_manifest(str(bad))
+
+        assert "error" in manifest
+        assert "Exec format" in manifest["error"]
+
+    def test_discover_manifest_non_utf8_help(self, tmp_path):
+        """Non-UTF-8 --help output is replaced, not raised."""
+        script = tmp_path / "badutf8"
+        script.write_bytes(
+            b'#!/usr/bin/env python3\n'
+            b'import sys\n'
+            b'sys.stdout.buffer.write(b"Commands:\n  \\xff\\xfe\n")'
+        )
+        script.chmod(0o755)
+
+        assert discover_manifest(str(script))["help_text"]
+
+    def test_discover_manifest_timeout(self, tmp_path, monkeypatch):
+        """TimeoutExpired records an error instead of being swallowed."""
+        def boom(*a, **k):
+            raise subprocess.TimeoutExpired(cmd="x", timeout=10)
+
+        monkeypatch.setattr(subprocess, "run", boom)
+        assert "error" in discover_manifest(str(tmp_path / "whatever"))
 
 
 class TestIsAgentMode:
