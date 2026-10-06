@@ -20,6 +20,7 @@ from typing import Optional, Dict, List, Any
 
 AGENT_ENV_VARS = ["CLAUDECODE", "AI_AGENT", "OPENCLAW_AGENT", "CODEX_SESSION", "HERMES_CRON"]
 JSON_FLAGS = ["--json", "--output=json", "-j", "-ojson", "--format=json"]
+OUTPUT_FLAGS = ("-o", "--output", "--format", "-o=", "--output=", "--format=")
 NON_INTERACTIVE_FLAGS = ["--yes", "--non-interactive", "-y", "--no-input", "--quiet", "-q"]
 ANSI_ESCAPE = re.compile(r'\x1b\[[0-9;]*[mGKHF]|\x1b\[.*?[a-zA-Z]|\x1b\[2J|\x1b\[H')
 
@@ -169,6 +170,14 @@ def inject_json_flag(cmd: List[str], flag: str) -> List[str]:
         return cmd
     if len(cmd) < 2:
         return cmd + [flag]
+
+    # Honour explicit output/format flags the user already passed (last-flag-wins tools
+    # like kubectl/gh/helm would override --json anyway; returning cmd unchanged is the
+    # smaller, more honest fix rather than silently producing a non-JSON payload).
+    for arg in cmd[1:]:
+        arg_base = arg.split("=", 1)[0]
+        if arg_base in OUTPUT_FLAGS:
+            return cmd
 
     limit = cmd.index("--") if "--" in cmd else len(cmd)
 
